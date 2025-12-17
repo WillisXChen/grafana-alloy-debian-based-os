@@ -65,10 +65,19 @@ discovery.docker "containers" {
   host = "unix:///var/run/docker.sock"
 }
 
+// 1.5. Relabel to expose container name as a label
+discovery.relabel "docker_labels" {
+  targets = discovery.docker.containers.targets
+  rule {
+    source_labels = ["__meta_docker_container_name"]
+    target_label  = "container"
+  }
+}
+
 // 2. Scrape logs from discovered containers
 loki.source.docker "container_logs" {
   host       = "unix:///var/run/docker.sock"
-  targets    = discovery.docker.containers.targets
+  targets    = discovery.relabel.docker_labels.output
   forward_to = [loki.write.default.receiver]
 }
 
