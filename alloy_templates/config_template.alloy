@@ -1,33 +1,32 @@
-// Host Metrics Collection (node_exporter equivalent)
+// --- Metrics Collection (Prometheus) ---
+
+// Host Metrics (Node Exporter)
 prometheus.exporter.unix "host_metrics" {
   rootfs_path = "/host/root"
   sysfs_path  = "/host/sys"
   procfs_path = "/host/proc"
 }
 
-// Scrape Host Metrics
 prometheus.scrape "host_scraper" {
   targets    = prometheus.exporter.unix.host_metrics.targets
   forward_to = [prometheus.remote_write.default.receiver]
-  scrape_interval = "15s"
 }
 
-// Container Metrics Collection (cAdvisor equivalent)
+// Container Metrics (cAdvisor)
 prometheus.exporter.cadvisor "container_metrics" {
   docker_host = "unix:///var/run/docker.sock"
 }
 
-// Scrape Container Metrics
 prometheus.scrape "container_scraper" {
   targets    = prometheus.exporter.cadvisor.container_metrics.targets
   forward_to = [prometheus.remote_write.default.receiver]
-  scrape_interval = "15s"
 }
 
-// Destination: Remote Write for Metrics
+// Destination: Prometheus Remote Write
 prometheus.remote_write "default" {
   endpoint {
-    url = "__PROMETHEUS_URL__"
+    // Append the API path to the base URL provided by the script
+    url = "__PROMETHEUS_URL__/api/v1/write"
     
     basic_auth {
       username = "__PROMETHEUS_USER__"
@@ -36,33 +35,33 @@ prometheus.remote_write "default" {
   }
 }
 
-// ---------------------------------------------------------
-// Log Collection (Loki)
-// ---------------------------------------------------------
+// --- Log Collection (Loki) ---
 
-// 1. Host System Logs (Journald)
-loki.source.journal "host_journal" {
-  max_age = "12h"
-  path    = "/var/log/journal"
-  labels  = {component = "host_journal"}
+// 1. Host System Logs (Standard Debian Logs)
+loki.source.local_files "host_logs" {
+  targets = [
+    { __path__ = "/var/log/*.log", job = "system_logs" },
+    { __path__ = "/var/log/syslog", job = "syslog" },
+  ]
   forward_to = [loki.write.default.receiver]
 }
 
-// 2. Container Logs (Docker)
+// 2. Container Logs
+discovery.docker "containers" {
+  host = "unix:///var/run/docker.sock"
+}
+
 loki.source.docker "container_logs" {
   host       = "unix:///var/run/docker.sock"
   targets    = discovery.docker.containers.targets
   forward_to = [loki.write.default.receiver]
 }
 
-discovery.docker "containers" {
-  host = "unix:///var/run/docker.sock"
-}
-
-// Destination: Remote Write for Logs (Loki)
+// Destination: Loki Push API
 loki.write "default" {
   endpoint {
-    url = "__LOKI_URL__"
+    // Append the API path to the base URL provided by the script
+    url = "__LOKI_URL__/loki/api/v1/push"
     
     basic_auth {
       username = "__LOKI_USER__"
