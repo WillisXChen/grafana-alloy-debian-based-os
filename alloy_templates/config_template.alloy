@@ -1,31 +1,35 @@
-// --- Metrics Collection (Prometheus) ---
+// =========================================================
+// 1. METRICS COLLECTION (Prometheus)
+// =========================================================
 
-// Host Metrics (Node Exporter)
-prometheus.exporter.unix "host_metrics" {
+// --- Host Metrics (CPU, Memory, Disk, Network) ---
+prometheus.exporter.unix "host_stats" {
   rootfs_path = "/host/root"
   sysfs_path  = "/host/sys"
   procfs_path = "/host/proc"
 }
 
-prometheus.scrape "host_scraper" {
-  targets    = prometheus.exporter.unix.host_metrics.targets
+prometheus.scrape "host_metrics" {
+  targets    = prometheus.exporter.unix.host_stats.targets
   forward_to = [prometheus.remote_write.default.receiver]
+  scrape_interval = "15s"
 }
 
-// Container Metrics (cAdvisor)
-prometheus.exporter.cadvisor "container_metrics" {
+// --- Container Metrics (cAdvisor) ---
+prometheus.exporter.cadvisor "container_stats" {
   docker_host = "unix:///var/run/docker.sock"
 }
 
-prometheus.scrape "container_scraper" {
-  targets    = prometheus.exporter.cadvisor.container_metrics.targets
+prometheus.scrape "container_metrics" {
+  targets    = prometheus.exporter.cadvisor.container_stats.targets
   forward_to = [prometheus.remote_write.default.receiver]
+  scrape_interval = "15s"
 }
 
-// Destination: Prometheus Remote Write
+// --- Metrics Destination (Remote Write) ---
 prometheus.remote_write "default" {
   endpoint {
-    // Append the API path to the base URL provided by the script
+    // Note: Append standard remote write path to avoid 405 errors
     url = "__PROMETHEUS_URL__/api/v1/write"
     
     basic_auth {
@@ -35,32 +39,43 @@ prometheus.remote_write "default" {
   }
 }
 
-// --- Log Collection (Loki) ---
+// =========================================================
+// 2. LOGS COLLECTION (Loki)
+// =========================================================
 
-// 1. Host System Logs (Standard Debian Logs)
-loki.source.local_files "host_logs" {
-  targets = [
+// --- VM Host System Logs ---
+// STEP 1: Discover log files on the host (Refixed component)
+local.file_match "host_log_files" {
+  path_targets = [
     { __path__ = "/var/log/*.log", job = "system_logs" },
     { __path__ = "/var/log/syslog", job = "syslog" },
+    { __path__ = "/var/log/auth.log", job = "auth_logs" },
   ]
+}
+
+// STEP 2: Read discovered files and forward to Loki
+loki.source.file "host_logs" {
+  targets    = local.file_match.host_log_files.targets
   forward_to = [loki.write.default.receiver]
 }
 
-// 2. Container Logs
+// --- Container Logs (Docker) ---
+// 1. Automatically discover containers
 discovery.docker "containers" {
   host = "unix:///var/run/docker.sock"
 }
 
+// 2. Scrape logs from discovered containers
 loki.source.docker "container_logs" {
   host       = "unix:///var/run/docker.sock"
   targets    = discovery.docker.containers.targets
   forward_to = [loki.write.default.receiver]
 }
 
-// Destination: Loki Push API
+// --- Logs Destination (Push API) ---
 loki.write "default" {
   endpoint {
-    // Append the API path to the base URL provided by the script
+    // Note: Append standard push path to avoid 404 errors
     url = "__LOKI_URL__/loki/api/v1/push"
     
     basic_auth {
