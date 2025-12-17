@@ -3,23 +3,37 @@ services:
     image: grafana/alloy:latest
     container_name: alloy
     restart: always
+    # Required to access host system information and kernel metrics properly
+    privileged: true 
     volumes:
-      - ./config.alloy:/etc/alloy/config.alloy
-      # Mount host filesystem for host metrics
-      - /:/host/root:ro,rslave
-      - /sys:/host/sys:ro,rslave
-      - /proc:/host/proc:ro,rslave
-      # Mount docker socket for container metrics
+      # Map the local configuration file to the container
+      - ./config.alloy:/etc/alloy/config.alloy:ro
+      
+      # Host filesystem mounts for Prometheus Node Exporter (host metrics)
+      # Removed rslave to prevent mount propagation errors on certain Debian systems
+      - /:/host/root:ro
+      - /sys:/host/sys:ro
+      - /proc:/host/proc:ro
+      
+      # Docker socket for container discovery and cAdvisor metrics
       - /var/run/docker.sock:/var/run/docker.sock:ro
-      # Mount logs for host log collection
+      
+      # System logs for Loki collection
       - /var/log:/var/log:ro
+      # Unique machine ID for identifying the host in logs/metrics
       - /etc/machine-id:/etc/machine-id:ro
+      
     ports:
-      - "12345:12345" # Alloy UI
+      - "12345:12345" # Expose Alloy UI and API
+      
     environment:
       - ALLOY_UI_PORT=12345
+      
     command:
       - run
+      # Listen on all interfaces for the web UI
       - --server.http.listen-addr=0.0.0.0:12345
+      # Define internal storage path for WAL (Write Ahead Log) and metadata
       - --storage.path=/var/lib/alloy/data
+      # Target the specific config file path
       - /etc/alloy/config.alloy
