@@ -1,0 +1,72 @@
+// Host Metrics Collection (node_exporter equivalent)
+prometheus.exporter.unix "host_metrics" {
+  rootfs_path = "/host/root"
+  sysfs_path  = "/host/sys"
+  procfs_path = "/host/proc"
+}
+
+// Scrape Host Metrics
+prometheus.scrape "host_scraper" {
+  targets    = prometheus.exporter.unix.host_metrics.targets
+  forward_to = [prometheus.remote_write.default.receiver]
+  scrape_interval = "15s"
+}
+
+// Container Metrics Collection (cAdvisor equivalent)
+prometheus.exporter.cadvisor "container_metrics" {
+  docker_host = "unix:///var/run/docker.sock"
+}
+
+// Scrape Container Metrics
+prometheus.scrape "container_scraper" {
+  targets    = prometheus.exporter.cadvisor.container_metrics.targets
+  forward_to = [prometheus.remote_write.default.receiver]
+  scrape_interval = "15s"
+}
+
+// Destination: Remote Write for Metrics
+prometheus.remote_write "default" {
+  endpoint {
+    url = "__PROMETHEUS_URL__"
+    
+    basic_auth {
+      username = "__PROMETHEUS_USER__"
+      password = "__PROMETHEUS_PASS__"
+    }
+  }
+}
+
+// ---------------------------------------------------------
+// Log Collection (Loki)
+// ---------------------------------------------------------
+
+// 1. Host System Logs (Journald)
+loki.source.journal "host_journal" {
+  max_age = "12h"
+  path    = "/var/log/journal"
+  labels  = {component = "host_journal"}
+  forward_to = [loki.write.default.receiver]
+}
+
+// 2. Container Logs (Docker)
+loki.source.docker "container_logs" {
+  host       = "unix:///var/run/docker.sock"
+  targets    = discovery.docker.containers.targets
+  forward_to = [loki.write.default.receiver]
+}
+
+discovery.docker "containers" {
+  host = "unix:///var/run/docker.sock"
+}
+
+// Destination: Remote Write for Logs (Loki)
+loki.write "default" {
+  endpoint {
+    url = "__LOKI_URL__"
+    
+    basic_auth {
+      username = "__LOKI_USER__"
+      password = "__LOKI_PASS__"
+    }
+  }
+}

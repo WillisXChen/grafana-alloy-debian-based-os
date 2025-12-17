@@ -1,0 +1,25 @@
+services:
+  alloy:
+    image: grafana/alloy:latest
+    container_name: alloy
+    restart: always
+    volumes:
+      - ./config.alloy:/etc/alloy/config.alloy
+      # Mount host filesystem for host metrics
+      - /:/host/root:ro,rslave
+      - /sys:/host/sys:ro,rslave
+      - /proc:/host/proc:ro,rslave
+      # Mount docker socket for container metrics
+      - /var/run/docker.sock:/var/run/docker.sock:ro
+      # Mount logs for host log collection
+      - /var/log:/var/log:ro
+      - /etc/machine-id:/etc/machine-id:ro
+    ports:
+      - "12345:12345" # Alloy UI
+    environment:
+      - ALLOY_UI_PORT=12345
+    command:
+      - run
+      - --server.http.listen-addr=0.0.0.0:12345
+      - --storage.path=/var/lib/alloy/data
+      - /etc/alloy/config.alloy
