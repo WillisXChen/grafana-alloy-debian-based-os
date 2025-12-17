@@ -13,7 +13,7 @@ prometheus.scrape "host_metrics" {
   targets    = prometheus.exporter.unix.host_stats.targets
   forward_to = [prometheus.remote_write.default.receiver]
   scrape_interval = "15s"
-}
+}  
 
 // --- Container Metrics (cAdvisor) ---
 prometheus.exporter.cadvisor "container_stats" {
@@ -78,7 +78,17 @@ discovery.relabel "docker_labels" {
 loki.source.docker "container_logs" {
   host       = "unix:///var/run/docker.sock"
   targets    = discovery.relabel.docker_labels.output
+  forward_to = [loki.process.filter_old_logs.receiver]
+}
+
+// 2.5. Process logs (filter out old logs)
+loki.process "filter_old_logs" {
   forward_to = [loki.write.default.receiver]
+  
+  stage.drop {
+    older_than = "24h"
+    drop_counter_reason = "too_old"
+  }
 }
 
 // --- Logs Destination (Push API) ---
